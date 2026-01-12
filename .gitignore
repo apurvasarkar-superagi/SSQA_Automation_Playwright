@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Reports
+sales/Reports/*
+!sales/Reports/.gitkeep
+*.html
+*.xml
+*.json
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Playwright
+playwright-report/
+test-results/
+playwright/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials (if any)
+*.key
+*.pem
+config.yaml
