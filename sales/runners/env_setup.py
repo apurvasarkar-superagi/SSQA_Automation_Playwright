@@ -1,6 +1,5 @@
 """
 Environment setup utilities.
-Similar to EnvSetup.java in the Java framework.
 """
 import os
 import threading

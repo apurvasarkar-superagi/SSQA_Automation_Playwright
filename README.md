@@ -66,9 +66,23 @@ Modify `conftest.py` to set `headless=True` in browser launch options.
 pytest --html=sales/Reports/report.html --self-contained-html
 ```
 
-# Run with specific tag
-pytest -m signIn
+#### Run tests in parallel:
+```bash
+# Using test_runner.py with 4 parallel workers
+python sales/runners/test_runner.py --workers 4
+
+# Using test_runner.py with auto-detected workers (based on CPU cores)
+python sales/runners/test_runner.py --workers auto
+
+# Using test_runner.py with 10 workers in headless mode
+python sales/runners/test_runner.py --workers 10 --headless
+
+# Or directly with pytest
+pytest sales/scr -n 4
+pytest sales/scr -n auto
 ```
+
+**Note**: Parallel execution requires `pytest-xdist`. If not installed, run `pip install -r requirements.txt` to install all dependencies.
 
 ### Configuration
 
@@ -79,6 +93,7 @@ pytest -m signIn
 #### Command Line Options
 - `--DVR_ENV`: Set environment (prod/staging)
 - `--DTEST_ENV_DOMAIN`: Override test domain
+- `--workers`: Number of parallel workers for test_runner.py (e.g., `4`, `auto`, or omit for sequential)
 
 ### Debugging
 

@@ -1,12 +1,19 @@
 import pytest
 import os
+import shutil
 from pathlib import Path
 from datetime import datetime
 from sales.sync_api import sync_playwright, Page
 
-# Import step definitions so they're registered with pytest-bdd
-# Using pytest_plugins ensures the module is loaded as a plugin
-pytest_plugins = ['sales.scr.Login.step_def.login_step_def']
+# Automatically load step definitions from glue modules
+from sales.runners.test_runner import get_glue_modules_for_pytest_plugins
+
+# Dynamically register all step definitions from glue modules
+pytest_plugins = get_glue_modules_for_pytest_plugins()
+
+# Constants for directory paths
+REPORTS_DIR = Path("sales/Reports")
+SCREENSHOTS_DIR = REPORTS_DIR / "screenshots"
 
 def pytest_addoption(parser):
     """Add custom command line options for pytest"""
@@ -38,29 +45,43 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     """Set environment variable from pytest option"""
-    env_value = config.getoption("--DVR_ENV")
-    os.environ["DVR_ENV"] = env_value
+    os.environ["DVR_ENV"] = config.getoption("--DVR_ENV")
     
-    # Set TEST_ENV_DOMAIN if provided
     domain_value = config.getoption("--DTEST_ENV_DOMAIN")
     if domain_value:
         os.environ["TEST_ENV_DOMAIN"] = domain_value
     
-    # Create Reports directory if it doesn't exist
-    reports_dir = Path("sales/Reports")
-    reports_dir.mkdir(parents=True, exist_ok=True)
+    # Create Reports and screenshots directories
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    SCREENSHOTS_DIR.mkdir(exist_ok=True)
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Automatically exclude tests tagged with @not_automated by default.
+    This ensures that when you run 'pytest -m apurva', scenarios with
+    @not_automated are automatically excluded, matching Java Cucumber behavior.
     
-    # Create screenshots directory
-    screenshots_dir = reports_dir / "screenshots"
-    screenshots_dir.mkdir(exist_ok=True)
+    This hook runs after test collection and before test execution, allowing
+    us to filter out tests that should not run by default.
+    """
+    remaining = []
+    deselected = []
+    
+    for item in items:
+        # Check if item has not_automated marker
+        # pytest-bdd converts @not_automated tag to pytest.mark.not_automated
+        markers = [marker.name for marker in item.iter_markers()]
+        if "not_automated" in markers:
+            deselected.append(item)
+        else:
+            remaining.append(item)
+    
+    # Update items list to exclude @not_automated tests
+    items[:] = remaining
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
 
-def pytest_runtest_setup(item):
-    """Setup before each test"""
-    pass
-
-def pytest_runtest_teardown(item):
-    """Teardown after each test"""
-    pass
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
@@ -75,15 +96,38 @@ def pytest_runtest_makereport(item, call):
             page = item.funcargs["page"]
             if isinstance(page, Page):
                 try:
-                    screenshot_dir = Path("sales/Reports/screenshots")
-                    screenshot_dir.mkdir(parents=True, exist_ok=True)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     test_name = item.name.replace(" ", "_")
-                    screenshot_path = screenshot_dir / f"{test_name}_{timestamp}.png"
+                    screenshot_path = SCREENSHOTS_DIR / f"{test_name}_{timestamp}.png"
                     page.screenshot(path=str(screenshot_path))
                     print(f"\nScreenshot saved: {screenshot_path}")
                 except Exception as e:
                     print(f"Failed to take screenshot: {e}")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """
+    Clean up __pycache__ directories after all tests complete.
+    This hook runs at the end of the test session.
+    """
+    base_path = Path("sales")
+    
+    # Find and remove all __pycache__ directories
+    for pycache_dir in base_path.rglob("__pycache__"):
+        try:
+            shutil.rmtree(pycache_dir)
+            print(f"Cleaned up: {pycache_dir}")
+        except Exception as e:
+            print(f"Warning: Could not remove {pycache_dir}: {e}")
+    
+    # Also clean up .pyc files that might be in parent directories
+    for pyc_file in base_path.rglob("*.pyc"):
+        try:
+            pyc_file.unlink()
+            print(f"Cleaned up: {pyc_file}")
+        except Exception as e:
+            print(f"Warning: Could not remove {pyc_file}: {e}")
+
 
 @pytest.fixture(scope="session")
 def env(request):
@@ -93,7 +137,7 @@ def env(request):
 @pytest.fixture(scope="session")
 def browser_type(request):
     """Fixture to get browser type from command line"""
-    return request.config.getoption("--browser")
+    return request.config.getoption("--test-browser", default="chromium")
 
 @pytest.fixture(scope="function")
 def page(request, browser_type):
@@ -101,21 +145,16 @@ def page(request, browser_type):
     headless = request.config.getoption("--headless")
     
     with sync_playwright() as p:
-        # Select browser based on option
-        if browser_type == "firefox":
-            browser = p.firefox.launch(headless=headless)
-        elif browser_type == "webkit":
-            browser = p.webkit.launch(headless=headless)
-        else:
-            browser = p.chromium.launch(headless=headless)
+        # Select browser based on option using dictionary mapping
+        browser_map = {
+            "firefox": p.firefox,
+            "webkit": p.webkit,
+        }
+        browser_launcher = browser_map.get(browser_type, p.chromium)
+        browser = browser_launcher.launch(headless=headless)
         
-        # Create context with viewport
-        context = browser.new_context(
-            viewport={"width": 1920, "height": 1080}
-        )
+        context = browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
-        
-        # Set default timeout
         page.set_default_timeout(30000)
         
         yield page
