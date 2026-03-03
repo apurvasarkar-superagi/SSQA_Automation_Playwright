@@ -1,15 +1,15 @@
 import yaml
 import os
 from pathlib import Path
-from sales.sync_api import Page
+from sales.utility.WebDriverHelper import WebDriverHelper
 
 def _get_env():
     """Get environment from env var or default to prod"""
     return os.getenv("DVR_ENV", "prod")
 
-class LoginPage:
+class LoginPage(WebDriverHelper):
     def __init__(self, page, cred_key=None, env=None):
-        self.page = page
+        super().__init__(page)
         self.config = self._load_config()
         self.env = env or _get_env()
         self.cred_key = cred_key
@@ -67,8 +67,13 @@ class LoginPage:
         self.additional_data = parts[5:] if len(parts) > 5 else []
 
     def navigate(self):
-        url = self.test_env_url_sub_str + self.test_env_main_url_sub_str
+        url = "https://"+self.test_env_url_sub_str + self.test_env_main_url_sub_str
         self.page.goto(url)
+
+    def collapseNavBar(self):
+        if self.is_element_found("div#collapsed_sidebar[style*='display: none;']"):
+            self.page.locator("img[alt='expand_icon']").click()
+        self.wait_for_element_to_disappear("div#collapsed_sidebar[style*='display: none;']", self.default_wait_time)
 
     def login(self):
         # Ensure credentials are parsed before login
@@ -81,4 +86,4 @@ class LoginPage:
         self.page.locator("#submit-btn").filter(has_text="Continue").click()
         self.page.locator("#auth_user_password").fill(self.password)
         self.page.locator("#submit-btn").filter(has_text="Sign In").click()
-        self.page.get_by_alt_text("i assistant_icon").wait_for()
+        self.page.locator("[alt='superagi_logo']").wait_for()

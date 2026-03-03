@@ -16,6 +16,7 @@ def user_signs_in_with_credentials(page, cred_key):
     """Step definition for signing in with specific credentials"""
     login_page = LoginPage(page, cred_key=cred_key)
     login_page.login()
+    login_page.collapseNavBar()
 
 
 @when("User navigates to Settings page")
