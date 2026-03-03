@@ -122,7 +122,8 @@ def run_all_tests(env="prod", tags=None, headless=False, browser="chromium", wor
     args.extend([
         "--html=sales/Reports/report.html",
         "--self-contained-html",
-        "--junitxml=sales/Reports/junit.xml"
+        "--junitxml=sales/Reports/junit.xml",
+        "--alluredir=allure-results"
     ])
     
     exit_code = pytest.main(args)

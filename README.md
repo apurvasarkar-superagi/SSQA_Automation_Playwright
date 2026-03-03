@@ -117,6 +117,63 @@ pytest --pdb
 Test reports are generated in `sales/Reports/`:
 - HTML report: `report.html`
 - JUnit XML: `junit.xml`
+- Allure results: `allure-results/` (raw data for Allure report generation)
+
+### Allure Reports
+
+#### Step 1: Install Allure CLI
+
+**macOS (Homebrew):**
+```bash
+brew install allure
+```
+
+**Other platforms:** See [Allure installation guide](https://allurereport.org/docs/install/)
+
+#### Step 2: Run tests with Allure results collection
+
+```bash
+# Run with allure results directory
+pytest --alluredir=allure-results
+
+# Or via test_runner.py (--alluredir is included automatically)
+python sales/runners/test_runner.py
+```
+
+#### Step 3: Generate and open the Allure report
+
+```bash
+# Open interactive report in browser (serves locally)
+allure serve allure-results
+
+# Or generate a static HTML report
+allure generate allure-results -o allure-report --clean
+allure open allure-report
+```
+
+#### Allure Decorators (optional, for richer reports)
+
+You can annotate your test functions with Allure metadata:
+
+```python
+import allure
+
+@allure.feature("Login")
+@allure.story("Sign In")
+@allure.title("User can sign in with valid credentials")
+def test_signIn(page):
+    with allure.step("Navigate to login page"):
+        ...
+    with allure.step("Enter credentials and submit"):
+        ...
+```
+
+**Supported decorators:**
+- `@allure.feature("Module Name")` — groups tests by feature
+- `@allure.story("Story Name")` — groups within a feature
+- `@allure.title("Test Title")` — sets a human-readable test name
+- `@allure.severity(allure.severity_level.CRITICAL)` — marks test severity
+- `with allure.step("Step description"):` — shows steps in the timeline
 
 ### Best Practices
 
