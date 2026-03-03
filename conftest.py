@@ -1,10 +1,15 @@
 import pytest
 import os
 import shutil
-import allure
+import logging
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
 from sales.sync_api import sync_playwright, Page
+
+step_log = logging.getLogger("bdd.steps")
+
+load_dotenv()
 
 # Automatically load step definitions from glue modules
 from sales.runners.test_runner import get_glue_modules_for_pytest_plugins
@@ -42,6 +47,18 @@ def pytest_addoption(parser):
         default="chromium",
         choices=["chromium", "firefox", "webkit"],
         help="Browser to use for tests (default: chromium)"
+    )
+    parser.addoption(
+        "--remote-ws-url",
+        action="store",
+        default=os.environ.get("PLAYWRIGHT_REMOTE_URL"),
+        help="WebSocket URL of remote Playwright browser server (e.g., wss://abc123.ngrok-free.app)"
+    )
+    parser.addoption(
+        "--local",
+        action="store_true",
+        default=False,
+        help="Force run tests on local browser, ignoring PLAYWRIGHT_REMOTE_URL"
     )
 
 def pytest_configure(config):
@@ -102,11 +119,6 @@ def pytest_runtest_makereport(item, call):
                     screenshot_path = SCREENSHOTS_DIR / f"{test_name}_{timestamp}.png"
                     page.screenshot(path=str(screenshot_path))
                     print(f"\nScreenshot saved: {screenshot_path}")
-                    allure.attach.file(
-                        str(screenshot_path),
-                        name="Screenshot on Failure",
-                        attachment_type=allure.attachment_type.PNG
-                    )
                 except Exception as e:
                     print(f"Failed to take screenshot: {e}")
 
@@ -114,8 +126,11 @@ def pytest_runtest_makereport(item, call):
 def pytest_sessionfinish(session, exitstatus):
     """
     Clean up __pycache__ directories after all tests complete.
-    This hook runs at the end of the test session.
+    Only runs on the main process, not on xdist workers.
     """
+    if hasattr(session.config, "workerinput"):
+        return
+
     base_path = Path("sales")
     
     # Find and remove all __pycache__ directories
@@ -133,18 +148,15 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def pytest_bdd_before_scenario(request, feature, scenario):
-    """Apply Allure labels directly from pytest-bdd feature/scenario objects.
+    step_log.warning("\nScenario: %s", scenario.name)
 
-    Called by pytest-bdd before each scenario runs, so the labels are always
-    set in time for Allure to capture them.
-    """
-    allure.dynamic.feature(feature.name)
-    allure.dynamic.story(scenario.name)
-    allure.dynamic.title(scenario.name)
-    for tag in feature.tags:
-        allure.dynamic.tag(tag)
-    for tag in scenario.tags:
-        allure.dynamic.tag(tag)
+
+def pytest_bdd_after_step(request, feature, scenario, step, step_func, step_func_args):
+    step_log.warning("  PASSED  %s %s", step.keyword, step.name)
+
+
+def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func_args, exception):
+    step_log.warning("  FAILED  %s %s", step.keyword, step.name)
 
 
 @pytest.fixture(scope="session")
@@ -161,7 +173,9 @@ def browser_type(request):
 def page(request, browser_type):
     """Fixture to provide a Playwright page instance"""
     headless = request.config.getoption("--headless")
-    
+    remote_ws_url = request.config.getoption("--remote-ws-url")
+    run_local = request.config.getoption("--local")
+
     with sync_playwright() as p:
         # Select browser based on option using dictionary mapping
         browser_map = {
@@ -169,7 +183,14 @@ def page(request, browser_type):
             "webkit": p.webkit,
         }
         browser_launcher = browser_map.get(browser_type, p.chromium)
-        browser = browser_launcher.launch(headless=headless)
+
+        if remote_ws_url and not run_local:
+            # Remote machine (Docker) has no display — always headless
+            if not headless:
+                print("\nWARNING: Headed mode is not supported on remote Docker machine. Running headless.")
+            browser = browser_launcher.connect(ws_endpoint=remote_ws_url)
+        else:
+            browser = browser_launcher.launch(headless=headless)
         
         context = browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
@@ -177,9 +198,13 @@ def page(request, browser_type):
         
         yield page
         
-        # Cleanup
+        # Cleanup — suppress TargetClosedError which occurs during
+        # parallel xdist shutdown when targets are already closing
         try:
             context.close()
+        except Exception:
+            pass
+        try:
             browser.close()
-        except Exception as e:
-            print(f"Error during browser cleanup: {e}")
+        except Exception:
+            pass

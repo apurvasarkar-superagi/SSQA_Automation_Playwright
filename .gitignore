@@ -69,3 +69,7 @@ Thumbs.db
 *.key
 *.pem
 config.yaml
+
+#output
+output
+reports
