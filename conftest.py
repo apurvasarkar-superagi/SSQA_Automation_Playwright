@@ -116,17 +116,14 @@ def pytest_sessionfinish(session, exitstatus):
     for pycache_dir in base_path.rglob("__pycache__"):
         try:
             shutil.rmtree(pycache_dir)
-            print(f"Cleaned up: {pycache_dir}")
-        except Exception as e:
-            print(f"Warning: Could not remove {pycache_dir}: {e}")
-    
-    # Also clean up .pyc files that might be in parent directories
+        except Exception:
+            pass
+
     for pyc_file in base_path.rglob("*.pyc"):
         try:
             pyc_file.unlink()
-            print(f"Cleaned up: {pyc_file}")
-        except Exception as e:
-            print(f"Warning: Could not remove {pyc_file}: {e}")
+        except Exception:
+            pass
 
 
 @pytest.fixture(scope="session")
