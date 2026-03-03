@@ -2,13 +2,17 @@
 
 Playwright-based automation framework for SuperAGI Sales application testing.
 
-## Installation Guide
+---
 
-Follow these steps to set up and run the project successfully:
+## Prerequisites
 
-### Prerequisites
 - Python 3.14.0 or higher
 - pip (Python package manager)
+- Docker (only required for remote execution)
+
+---
+
+## Installation
 
 ### Step 1: Clone the Repository
 ```bash
@@ -16,7 +20,7 @@ git clone <repository-url>
 cd SSQA_Automation_Playwright
 ```
 
-### Step 2: Create Virtual Environment (Recommended)
+### Step 2: Create Virtual Environment
 ```bash
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -33,175 +37,188 @@ playwright install chromium
 ```
 
 ### Step 5: Configure Environment
-- The `config.yaml` file contains environment configurations for `prod` and `staging`
-- Credentials are stored in the config file in the format: `email___password___user_name___workspace_id___user_id`
-
-### Step 6: Run Tests
-
-#### Run all tests:
 ```bash
-pytest
+cp .env.example .env
+```
+Edit `.env` and fill in the required values:
+- `PLAYWRIGHT_REMOTE_URL` — WebSocket URL of the remote browser server (see [Remote Execution](#remote-execution))
+
+> **Not using a remote machine?** Skip the `.env` setup and add `--local` to all your pytest commands to run the browser locally instead.
+
+The `config.yaml` file contains environment configurations for `prod` and `staging`.
+
+---
+
+## Running Tests
+
+### Basic usage
+```bash
+# Run by tag (marker)
+pytest -m signIn
+pytest -m signIn_1
+pytest -m settings
+
+# Run for a specific environment
+pytest -m signIn --DVR_ENV=staging
+
+# Run with custom domain
+pytest -m signIn --DTEST_ENV_DOMAIN=".in.superagi.com"
 ```
 
-#### Run tests with specific tag:
+### Local vs Remote execution
+
+| Flag | Description |
+|---|---|
+| *(no flag)* | Runs on remote browser server defined in `.env` |
+| `--local` | Forces local browser, ignores `.env` remote URL |
+| `--headless` | Runs browser in headless mode (local only) |
+
+```bash
+# Run on remote machine (uses PLAYWRIGHT_REMOTE_URL from .env)
+pytest -m signIn
+
+# Run on local machine with visible browser
+pytest -m signIn --local
+
+# Run on local machine in headless mode
+pytest -m signIn --local --headless
+```
+
+### Browser selection
+```bash
+pytest -m signIn --local --test-browser firefox
+pytest -m signIn --local --test-browser webkit
+pytest -m signIn --local --test-browser chromium   # default
+```
+
+### Parallel execution
+```bash
+pytest -m signIn -n 2
+pytest -m signIn -n 4
+pytest -m signIn -n auto
+```
+
+### With HTML report
+```bash
+pytest -m signIn --html=sales/Reports/report.html --self-contained-html
+```
+
+---
+
+## Remote Execution
+
+Tests can run against a browser on a remote machine using Docker + ngrok. The remote machine hosts the browser; your local machine runs the test logic.
+
+### Setup
+
+**1. Set up the remote machine** — see [playwright-remote-server](../playwright-remote-server/README.md)
+
+**2. Get the connection URL from the remote machine:**
+```bash
+./get-url.sh
+```
+Output:
+```
+Connection URL:  wss://abc123.ngrok-free.app
+
+Run on your LOCAL machine:
+pytest -m signIn --remote-ws-url wss://abc123.ngrok-free.app
+```
+
+**3. Save the URL in `.env` on your local machine:**
+```
+PLAYWRIGHT_REMOTE_URL=wss://abc123.ngrok-free.app
+```
+
+**4. Run tests — no flags needed:**
 ```bash
 pytest -m signIn
 ```
 
-#### Run tests for specific environment:
+> The ngrok URL changes each time the remote server restarts. Update the one line in `.env` when it does.
+
+### Override URL at runtime
 ```bash
-pytest --DVR_ENV=staging
+pytest -m signIn --remote-ws-url wss://different-url.ngrok-free.app
 ```
 
-#### Run tests with custom domain:
-```bash
-pytest --DTEST_ENV_DOMAIN=".in.superagi.com"
+---
+
+## Step Logging
+
+Tests print each BDD step and its result in real time:
+
+```
+Scenario: Verify user can sign in and access settings
+  PASSED  Given User navigates to the login page
+  PASSED  When User signs in with qaautomation_main_cred credentials
+  PASSED  And User navigates to Settings page
+  PASSED  Then User should verify all settings options are present
+  PASSED  And User should verify Profile option is available in settings sidebar
 ```
 
-#### Run tests in headless mode:
-Modify `conftest.py` to set `headless=True` in browser launch options.
+Failed steps show as `FAILED` and stop the scenario there.
 
-#### Run with HTML report:
-```bash
-pytest --html=sales/Reports/report.html --self-contained-html
+---
+
+## Command Line Options
+
+| Option | Default | Description |
+|---|---|---|
+| `-m <marker>` | — | Run tests by tag (e.g. `-m signIn`) |
+| `--DVR_ENV` | `prod` | Environment: `prod` or `staging` |
+| `--DTEST_ENV_DOMAIN` | — | Override domain (e.g. `.in.superagi.com`) |
+| `--test-browser` | `chromium` | Browser: `chromium`, `firefox`, `webkit` |
+| `--headless` | `False` | Run browser headless (local only) |
+| `--local` | `False` | Force local browser, ignore remote URL |
+| `--remote-ws-url` | from `.env` | Remote browser server WebSocket URL |
+
+---
+
+## Reports
+
+Reports are saved to `sales/Reports/`:
+- Screenshots on failure: `sales/Reports/screenshots/`
+- HTML report: `sales/Reports/report.html`
+
+---
+
+## Project Structure
+
+```
+SSQA_Automation_Playwright/
+├── conftest.py              # Fixtures, hooks, CLI options
+├── pytest.ini               # Pytest configuration
+├── requirements.txt         # Python dependencies
+├── .env.example             # Environment variable template
+├── config.yaml              # Test environment config (credentials, URLs)
+└── sales/
+    ├── scr/
+    │   ├── Login/           # Login feature tests
+    │   ├── Settings/        # Settings feature tests
+    │   └── Common/          # Shared steps
+    ├── utility/
+    │   └── WebDriverHelper.py
+    ├── Reports/             # Test output
+    └── runners/
+        └── test_runner.py
 ```
 
-#### Run tests in parallel:
-```bash
-# Using test_runner.py with 4 parallel workers
-python sales/runners/test_runner.py --workers 4
+---
 
-# Using test_runner.py with auto-detected workers (based on CPU cores)
-python sales/runners/test_runner.py --workers auto
+## Troubleshooting
 
-# Using test_runner.py with 10 workers in headless mode
-python sales/runners/test_runner.py --workers 10 --headless
+**Import errors**
+- Ensure virtual environment is activated
+- Check that `__init__.py` files are present
 
-# Or directly with pytest
-pytest sales/scr -n 4
-pytest sales/scr -n auto
-```
+**Browser not found**
+- Run `playwright install chromium`
 
-**Note**: Parallel execution requires `pytest-xdist`. If not installed, run `pip install -r requirements.txt` to install all dependencies.
+**Remote connection timeout**
+- Verify the remote server is running: check `docker compose ps` on the remote machine
+- Get a fresh URL: run `./get-url.sh` on the remote machine and update `.env`
 
-### Configuration
-
-#### Environment Variables
-- `DVR_ENV`: Environment to use (`prod` or `staging`, default: `prod`)
-- `TEST_ENV_DOMAIN`: Override domain (e.g., `.in.superagi.com`)
-
-#### Command Line Options
-- `--DVR_ENV`: Set environment (prod/staging)
-- `--DTEST_ENV_DOMAIN`: Override test domain
-- `--workers`: Number of parallel workers for test_runner.py (e.g., `4`, `auto`, or omit for sequential)
-
-### Debugging
-
-#### Run with verbose output:
-```bash
-pytest -v -s
-```
-
-#### Run specific test:
-```bash
-pytest sales/test_signIn.py::test_signIn
-```
-
-#### Run with pdb debugger:
-```bash
-pytest --pdb
-```
-
-### Reports
-
-Test reports are generated in `sales/Reports/`:
-- HTML report: `report.html`
-- JUnit XML: `junit.xml`
-- Allure results: `allure-results/` (raw data for Allure report generation)
-
-### Allure Reports
-
-#### Step 1: Install Allure CLI
-
-**macOS (Homebrew):**
-```bash
-brew install allure
-```
-
-**Other platforms:** See [Allure installation guide](https://allurereport.org/docs/install/)
-
-#### Step 2: Run tests with Allure results collection
-
-```bash
-# Run with allure results directory
-pytest --alluredir=allure-results
-
-# Or via test_runner.py (--alluredir is included automatically)
-python sales/runners/test_runner.py
-```
-
-#### Step 3: Generate and open the Allure report
-
-```bash
-# Open interactive report in browser (serves locally)
-allure serve allure-results
-
-# Or generate a static HTML report
-allure generate allure-results -o allure-report --clean
-allure open allure-report
-```
-
-#### Allure Decorators (optional, for richer reports)
-
-You can annotate your test functions with Allure metadata:
-
-```python
-import allure
-
-@allure.feature("Login")
-@allure.story("Sign In")
-@allure.title("User can sign in with valid credentials")
-def test_signIn(page):
-    with allure.step("Navigate to login page"):
-        ...
-    with allure.step("Enter credentials and submit"):
-        ...
-```
-
-**Supported decorators:**
-- `@allure.feature("Module Name")` — groups tests by feature
-- `@allure.story("Story Name")` — groups within a feature
-- `@allure.title("Test Title")` — sets a human-readable test name
-- `@allure.severity(allure.severity_level.CRITICAL)` — marks test severity
-- `with allure.step("Step description"):` — shows steps in the timeline
-
-### Best Practices
-
-1. **Page Object Model**: All page interactions should be in page object classes
-2. **Step Definitions**: Map Gherkin steps to Python functions
-3. **Fixtures**: Use pytest fixtures for setup/teardown
-4. **Configuration**: Store credentials and URLs in `config.yaml`
-5. **Tags**: Use tags to organize and filter tests
-
-### Troubleshooting
-
-#### Import Errors
-- Ensure all `__init__.py` files are present
-- Check that virtual environment is activated
-- Verify Python path includes project root
-
-#### Local Browser 
-- Run `playwright install` to ensure browsers are installed
-- Check browser launch options in `conftest.py`
-
-#### Configuration Issues
-- Verify `config.yaml` exists and has correct structure
-- Check environment variable settings
-
-### Contributing
-
-When adding new tests:
-1. Create feature file in appropriate `feature/` directory
-2. Add step definitions in `step_def/` directory
-3. Create page objects in `pageObject/` if needed
-4. Follow existing naming conventions
+**Config issues**
+- Verify `config.yaml` exists with correct structure
+- Check `.env` has the correct values
