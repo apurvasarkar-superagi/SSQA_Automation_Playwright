@@ -1,6 +1,7 @@
 import pytest
 import os
 import shutil
+import allure
 from pathlib import Path
 from datetime import datetime
 from sales.sync_api import sync_playwright, Page
@@ -101,6 +102,11 @@ def pytest_runtest_makereport(item, call):
                     screenshot_path = SCREENSHOTS_DIR / f"{test_name}_{timestamp}.png"
                     page.screenshot(path=str(screenshot_path))
                     print(f"\nScreenshot saved: {screenshot_path}")
+                    allure.attach.file(
+                        str(screenshot_path),
+                        name="Screenshot on Failure",
+                        attachment_type=allure.attachment_type.PNG
+                    )
                 except Exception as e:
                     print(f"Failed to take screenshot: {e}")
 
@@ -124,6 +130,21 @@ def pytest_sessionfinish(session, exitstatus):
             pyc_file.unlink()
         except Exception:
             pass
+
+
+def pytest_bdd_before_scenario(request, feature, scenario):
+    """Apply Allure labels directly from pytest-bdd feature/scenario objects.
+
+    Called by pytest-bdd before each scenario runs, so the labels are always
+    set in time for Allure to capture them.
+    """
+    allure.dynamic.feature(feature.name)
+    allure.dynamic.story(scenario.name)
+    allure.dynamic.title(scenario.name)
+    for tag in feature.tags:
+        allure.dynamic.tag(tag)
+    for tag in scenario.tags:
+        allure.dynamic.tag(tag)
 
 
 @pytest.fixture(scope="session")
