@@ -2,14 +2,45 @@ import pytest
 import os
 import shutil
 import logging
+import uuid
+import threading
 from pathlib import Path
-from datetime import datetime
+
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from sales.sync_api import sync_playwright, Page
 
 step_log = logging.getLogger("bdd.steps")
 
 load_dotenv()
+
+# ── Dashboard API integration ─────────────────────────────────────────────────
+# Set DASHBOARD_URL in .env to enable (e.g., http://localhost:8080)
+# All hooks are no-ops when DASHBOARD_URL is not set.
+
+_launch_id: str | None = None          # UUID for the current pytest session
+_launch_start_ms: int = 0             # epoch ms when session started
+_launch_tag_set = False                # whether we've updated tag from feature tags
+_scenario_ids: dict[str, str] = {}    # nodeid → scenario UUID
+_scenario_start: dict[str, float] = {}  # scenario UUID → start timestamp (epoch ms)
+_api_lock = threading.Lock()
+
+
+def _api(method: str, path: str, data: dict | None = None) -> None:
+    """Fire-and-forget API call to the dashboard backend."""
+    url = os.environ.get("DASHBOARD_URL", "").rstrip("/")
+    if not url:
+        return
+    try:
+        import requests as _req
+        fn = getattr(_req, method.lower())
+        fn(f"{url}{path}", json=data, timeout=3)
+    except Exception:
+        pass  # never block test execution
+
+
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 # Automatically load step definitions from glue modules
 from sales.runners.test_runner import get_glue_modules_for_pytest_plugins
@@ -61,6 +92,21 @@ def pytest_addoption(parser):
         help="Force run tests on local browser, ignoring PLAYWRIGHT_REMOTE_URL"
     )
 
+def pytest_sessionstart(session):
+    """Create a launch entry on the dashboard at the start of a test session."""
+    global _launch_id, _launch_start_ms
+    # Only run on the main process (not xdist workers)
+    if hasattr(session.config, "workerinput"):
+        return
+    _launch_id = str(uuid.uuid4())
+    _launch_start_ms = _now_ms()
+    keyword = getattr(session.config.option, "keyword", "") or ""
+    # Use keyword as initial tag; will be refined to feature tag on first scenario
+    tag = keyword.strip() or "all"
+    env = os.environ.get("DVR_ENV", "prod")
+    _api("POST", "/api/launches", {"id": _launch_id, "tag": tag, "env": env})
+
+
 def pytest_configure(config):
     """Set environment variable from pytest option"""
     os.environ["DVR_ENV"] = config.getoption("--DVR_ENV")
@@ -106,10 +152,15 @@ def pytest_runtest_makereport(item, call):
     """Hook to capture test results and take screenshots on failure"""
     outcome = yield
     rep = outcome.get_result()
-    
+
+    if rep.when != "call":
+        return
+
+    sc_id = _scenario_ids.get(item.nodeid)
+    screenshot_name = None
+
     # Take screenshot on failure
-    if rep.when == "call" and rep.failed:
-        # Get the page fixture if available
+    if rep.failed:
         if "page" in item.funcargs:
             page = item.funcargs["page"]
             if isinstance(page, Page):
@@ -118,9 +169,30 @@ def pytest_runtest_makereport(item, call):
                     test_name = item.name.replace(" ", "_")
                     screenshot_path = SCREENSHOTS_DIR / f"{test_name}_{timestamp}.png"
                     page.screenshot(path=str(screenshot_path))
+                    screenshot_name = screenshot_path.name
                     print(f"\nScreenshot saved: {screenshot_path}")
+                    if _launch_id:
+                        _api("POST", f"/api/launches/{_launch_id}/logs", {
+                            "type": "info",
+                            "text": f"   Screenshot: {screenshot_name}",
+                        })
                 except Exception as e:
                     print(f"Failed to take screenshot: {e}")
+
+    # Update scenario status on dashboard
+    if _launch_id and sc_id:
+        status = "passed" if rep.passed else "failed"
+        start_ms = _scenario_start.get(sc_id)
+        duration_ms = (_now_ms() - start_ms) if start_ms else None
+        _api("PATCH", f"/api/launches/{_launch_id}/scenarios/{sc_id}", {
+            "status": status,
+            "duration_ms": duration_ms,
+            "screenshot": screenshot_name,
+        })
+        _api("POST", f"/api/launches/{_launch_id}/logs", {
+            "type": "pass" if rep.passed else "fail",
+            "text": f"{'✓' if rep.passed else '✗'}  Scenario {status}",
+        })
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -130,6 +202,20 @@ def pytest_sessionfinish(session, exitstatus):
     """
     if hasattr(session.config, "workerinput"):
         return
+
+    # Finalize launch on dashboard
+    if _launch_id:
+        status = "passed" if exitstatus == 0 else "failed"
+        duration_ms = _now_ms() - _launch_start_ms if _launch_start_ms else None
+        _api("PATCH", f"/api/launches/{_launch_id}", {
+            "status": status,
+            "end_time": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": duration_ms,
+        })
+        _api("POST", f"/api/launches/{_launch_id}/logs", {
+            "type": "info",
+            "text": f"── SESSION FINISHED — {status.upper()} ──",
+        })
 
     base_path = Path("sales")
     
@@ -148,15 +234,76 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def pytest_bdd_before_scenario(request, feature, scenario):
+    global _launch_tag_set
     step_log.warning("\nScenario: %s", scenario.name)
+
+    if not _launch_id:
+        return
+
+    # Refine launch tag once using the feature-level tag (e.g. @signIn)
+    if not _launch_tag_set and feature.tags:
+        with _api_lock:
+            if not _launch_tag_set:
+                _launch_tag_set = True
+                _api("PATCH", f"/api/launches/{_launch_id}", {"tag": next(iter(feature.tags))})
+
+    # Derive a short scenario name from its tags, or fall back to scenario name
+    sc_name = next(iter(scenario.tags)) if scenario.tags else scenario.name[:40]
+    sc_id = str(uuid.uuid4())
+    _scenario_ids[request.node.nodeid] = sc_id
+    _scenario_start[sc_id] = _now_ms()
+
+    _api("POST", f"/api/launches/{_launch_id}/scenarios", {
+        "id": sc_id,
+        "name": sc_name,
+        "description": scenario.name,
+    })
+    _api("POST", f"/api/launches/{_launch_id}/logs", {
+        "type": "step",
+        "text": f"SCENARIO: {sc_name} — {scenario.name}",
+    })
 
 
 def pytest_bdd_after_step(request, feature, scenario, step, step_func, step_func_args):
     step_log.warning("  PASSED  %s %s", step.keyword, step.name)
+    if not _launch_id:
+        return
+    sc_id = _scenario_ids.get(request.node.nodeid)
+    _api("POST", f"/api/launches/{_launch_id}/logs", {
+        "type": "pass",
+        "text": f"✓  {step.keyword} {step.name}",
+    })
+    if sc_id:
+        _api("POST", f"/api/launches/{_launch_id}/steps", {
+            "scenario_id": sc_id,
+            "keyword": step.keyword,
+            "text": step.name,
+            "status": "passed",
+        })
 
 
 def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func_args, exception):
     step_log.warning("  FAILED  %s %s", step.keyword, step.name)
+    if not _launch_id:
+        return
+    sc_id = _scenario_ids.get(request.node.nodeid)
+    error_text = str(exception)[:500]
+    _api("POST", f"/api/launches/{_launch_id}/logs", {
+        "type": "fail",
+        "text": f"✗  {step.keyword} {step.name}",
+    })
+    _api("POST", f"/api/launches/{_launch_id}/logs", {
+        "type": "fail",
+        "text": f"   {error_text}",
+    })
+    if sc_id:
+        _api("POST", f"/api/launches/{_launch_id}/steps", {
+            "scenario_id": sc_id,
+            "keyword": step.keyword,
+            "text": step.name,
+            "status": "failed",
+            "error": error_text,
+        })
 
 
 @pytest.fixture(scope="session")
@@ -188,7 +335,15 @@ def page(request, browser_type):
             # Remote machine (Docker) has no display — always headless
             if not headless:
                 print("\nWARNING: Headed mode is not supported on remote Docker machine. Running headless.")
-            browser = browser_launcher.connect(ws_endpoint=remote_ws_url)
+            scenario_node = getattr(request.node, 'scenario', None)
+            if scenario_node:
+                scenario_name = scenario_node.name
+            else:
+                scenario_name = request.node.name.replace('test_', '', 1).replace('_', ' ').title()
+            browser = browser_launcher.connect(
+                ws_endpoint=remote_ws_url,
+                headers={"X-Scenario-Name": scenario_name}
+            )
         else:
             browser = browser_launcher.launch(headless=headless)
         
