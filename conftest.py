@@ -5,6 +5,8 @@ import logging
 import uuid
 import threading
 from pathlib import Path
+from urllib.parse import urlparse
+import requests
 
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -340,8 +342,14 @@ def page(request, browser_type):
                 scenario_name = scenario_node.name
             else:
                 scenario_name = request.node.name.replace('test_', '', 1).replace('_', ' ').title()
+            parsed = urlparse(remote_ws_url)
+            scheme = "https" if parsed.scheme == "wss" else "http"
+            base_url = f"{scheme}://{parsed.netloc}"
+            resp = requests.post(f"{base_url}/api/acquire-worker", json={}, timeout=130)
+            resp.raise_for_status()
+            ws_url = base_url.replace("https://", "wss://") + resp.json()["wsUrl"]
             browser = browser_launcher.connect(
-                ws_endpoint=remote_ws_url,
+                ws_endpoint=ws_url,
                 headers={"X-Scenario-Name": scenario_name}
             )
         else:
