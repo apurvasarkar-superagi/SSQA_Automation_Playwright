@@ -1,0 +1,36 @@
+import os
+from pytest_bdd import when, then, parsers
+from sales.scr.Contacts.feature_code.contactspage import ContactsPage
+from playwright.sync_api import expect
+
+
+@then("User navigates to CRM Contacts page and Contacts list should be visible")
+def user_navigates_to_crm_contacts_and_list_visible(page):
+    ContactsPage(page).navigateToCRMContacts()
+    ContactsPage(page).verifyContactsListVisible()
+
+
+@when(parsers.parse('User adds a contact with details {contact_details}'))
+def user_adds_contact(page, contact_details):
+    first_name, last_name, email = contact_details.split("___")
+    scenario_id = os.environ.get("SCENARIO_ID", "")
+    if "@" in email and scenario_id:
+        local, domain = email.split("@", 1)
+        email = f"{local}+{scenario_id}@{domain}"
+    ContactsPage(page).clickAddContact()
+    ContactsPage(page).fillContactDetails(first_name, last_name, email)
+    ContactsPage(page).submitAddContactForm()
+
+@then(parsers.parse('User should see "{message}" message'))
+def user_should_see_message(page, message):
+    ContactsPage(page).verifySuccessMessage(message)
+
+
+@then(parsers.parse('User should see contact email from {contact_details} in profile details'))
+def user_should_see_contact_email_in_profile_details(page, contact_details):
+    _, _, email = contact_details.split("___")
+    scenario_id = os.environ.get("SCENARIO_ID", "")
+    if "@" in email and scenario_id:
+        local, domain = email.split("@", 1)
+        email = f"{local}+{scenario_id}@{domain}"
+    expect(page.locator("#profile_details_section").get_by_text(email)).to_be_visible()

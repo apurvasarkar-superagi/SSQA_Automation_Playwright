@@ -4,6 +4,8 @@ import shutil
 import logging
 import uuid
 import threading
+import random
+import string
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
@@ -20,10 +22,10 @@ load_dotenv()
 # Set DASHBOARD_URL in .env to enable (e.g., http://localhost:8080)
 # All hooks are no-ops when DASHBOARD_URL is not set.
 
-_launch_id: str | None = None          # UUID for the current pytest session
-_launch_start_ms: int = 0             # epoch ms when session started
-_launch_tag_set = False                # whether we've updated tag from feature tags
-_scenario_ids: dict[str, str] = {}    # nodeid → scenario UUID
+_launch_id: str | None = None  # UUID for the current pytest session
+_launch_start_ms: int = 0  # epoch ms when session started
+_launch_tag_set = False  # whether we've updated tag from feature tags
+_scenario_ids: dict[str, str] = {}  # nodeid → scenario UUID
 _scenario_start: dict[str, float] = {}  # scenario UUID → start timestamp (epoch ms)
 _api_lock = threading.Lock()
 
@@ -44,6 +46,7 @@ def _api(method: str, path: str, data: dict | None = None) -> None:
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
+
 # Automatically load step definitions from glue modules
 from sales.runners.test_runner import get_glue_modules_for_pytest_plugins
 
@@ -53,6 +56,7 @@ pytest_plugins = get_glue_modules_for_pytest_plugins()
 # Constants for directory paths
 REPORTS_DIR = Path("sales/Reports")
 SCREENSHOTS_DIR = REPORTS_DIR / "screenshots"
+
 
 def pytest_addoption(parser):
     """Add custom command line options for pytest"""
@@ -94,6 +98,7 @@ def pytest_addoption(parser):
         help="Force run tests on local browser, ignoring PLAYWRIGHT_REMOTE_URL"
     )
 
+
 def pytest_sessionstart(session):
     """Create a launch entry on the dashboard at the start of a test session."""
     global _launch_id, _launch_start_ms
@@ -112,11 +117,11 @@ def pytest_sessionstart(session):
 def pytest_configure(config):
     """Set environment variable from pytest option"""
     os.environ["DVR_ENV"] = config.getoption("--DVR_ENV")
-    
+
     domain_value = config.getoption("--DTEST_ENV_DOMAIN")
     if domain_value:
         os.environ["TEST_ENV_DOMAIN"] = domain_value
-    
+
     # Create Reports and screenshots directories
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     SCREENSHOTS_DIR.mkdir(exist_ok=True)
@@ -127,13 +132,13 @@ def pytest_collection_modifyitems(config, items):
     Automatically exclude tests tagged with @not_automated by default.
     This ensures that when you run 'pytest -m apurva', scenarios with
     @not_automated are automatically excluded, matching Java Cucumber behavior.
-    
+
     This hook runs after test collection and before test execution, allowing
     us to filter out tests that should not run by default.
     """
     remaining = []
     deselected = []
-    
+
     for item in items:
         # Check if item has not_automated marker
         # pytest-bdd converts @not_automated tag to pytest.mark.not_automated
@@ -142,7 +147,7 @@ def pytest_collection_modifyitems(config, items):
             deselected.append(item)
         else:
             remaining.append(item)
-    
+
     # Update items list to exclude @not_automated tests
     items[:] = remaining
     if deselected:
@@ -220,7 +225,7 @@ def pytest_sessionfinish(session, exitstatus):
         })
 
     base_path = Path("sales")
-    
+
     # Find and remove all __pycache__ directories
     for pycache_dir in base_path.rglob("__pycache__"):
         try:
@@ -308,15 +313,26 @@ def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func
         })
 
 
+@pytest.fixture(scope="function", autouse=True)
+def scenario_id():
+    """Unique 9-character alphanumeric identifier, regenerated for every scenario."""
+    sid = ''.join(random.choices(string.ascii_lowercase + string.digits, k=9))
+    os.environ["SCENARIO_ID"] = sid
+    yield sid
+    os.environ.pop("SCENARIO_ID", None)
+
+
 @pytest.fixture(scope="session")
 def env(request):
     """Fixture to get the DVR_ENV from command line"""
     return request.config.getoption("--DVR_ENV")
 
+
 @pytest.fixture(scope="session")
 def browser_type(request):
     """Fixture to get browser type from command line"""
     return request.config.getoption("--test-browser", default="chromium")
+
 
 @pytest.fixture(scope="function")
 def page(request, browser_type):
@@ -334,9 +350,6 @@ def page(request, browser_type):
         browser_launcher = browser_map.get(browser_type, p.chromium)
 
         if remote_ws_url and not run_local:
-            # Remote machine (Docker) has no display — always headless
-            if not headless:
-                print("\nWARNING: Headed mode is not supported on remote Docker machine. Running headless.")
             scenario_node = getattr(request.node, 'scenario', None)
             if scenario_node:
                 scenario_name = scenario_node.name
@@ -348,19 +361,22 @@ def page(request, browser_type):
             resp = requests.post(f"{base_url}/api/acquire-worker", json={}, timeout=130)
             resp.raise_for_status()
             ws_url = base_url.replace("https://", "wss://") + resp.json()["wsUrl"]
+            connect_headers = {"X-Scenario-Name": scenario_name}
+            if headless:
+                connect_headers["x-playwright-headless"] = "true"
             browser = browser_launcher.connect(
                 ws_endpoint=ws_url,
-                headers={"X-Scenario-Name": scenario_name}
+                headers=connect_headers,
             )
         else:
             browser = browser_launcher.launch(headless=headless)
-        
-        context = browser.new_context(viewport={"width": 1920, "height": 1080})
+
+        context = browser.new_context(viewport={"width": 1920, "height": 900})
         page = context.new_page()
         page.set_default_timeout(30000)
-        
+
         yield page
-        
+
         # Cleanup — suppress TargetClosedError which occurs during
         # parallel xdist shutdown when targets are already closing
         try:
