@@ -97,6 +97,12 @@ def pytest_addoption(parser):
         default=False,
         help="Force run tests on local browser, ignoring PLAYWRIGHT_REMOTE_URL"
     )
+    parser.addoption(
+        "--build_id",
+        action="store",
+        default=os.environ.get("BUILD_ID"),
+        help="Build name for grouping runs on the dashboard (e.g., CRM_Regression)"
+    )
 
 
 def pytest_sessionstart(session):
@@ -112,6 +118,20 @@ def pytest_sessionstart(session):
     tag = keyword.strip() or "all"
     env = os.environ.get("DVR_ENV", "prod")
     _api("POST", "/api/launches", {"id": _launch_id, "tag": tag, "env": env})
+
+    # Register build name ONCE — server resolves auto-numbering (apurva, apurva#2, etc.)
+    build_id = getattr(session.config.option, "build_id", None)
+    remote_ws_url = getattr(session.config.option, "remote_ws_url", None)
+    if build_id and remote_ws_url:
+        parsed = urlparse(remote_ws_url)
+        scheme = "https" if parsed.scheme == "wss" else "http"
+        base_url = f"{scheme}://{parsed.netloc}"
+        try:
+            resp = requests.post(f"{base_url}/api/builds/register", json={"name": build_id}, timeout=5)
+            if resp.ok:
+                os.environ["_RESOLVED_BUILD_ID"] = resp.json()["name"]
+        except Exception:
+            pass
 
 
 def pytest_configure(config):
@@ -362,6 +382,9 @@ def page(request, browser_type):
             resp.raise_for_status()
             ws_url = base_url.replace("https://", "wss://") + resp.json()["wsUrl"]
             connect_headers = {"X-Scenario-Name": scenario_name}
+            build_id = os.environ.get("_RESOLVED_BUILD_ID") or request.config.getoption("--build_id")
+            if build_id:
+                connect_headers["X-Build-Identifier"] = build_id
             if headless:
                 connect_headers["x-playwright-headless"] = "true"
             browser = browser_launcher.connect(
