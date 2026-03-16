@@ -2,8 +2,6 @@ import pytest
 from pytest_bdd import when, then, parsers
 from sales.scr.Contacts.feature_code.contactspage import ContactsPage
 from sales.runners.env_setup import EnvSetup
-from playwright.sync_api import expect
-
 
 @pytest.fixture(autouse=True)
 def reset_contact_state():
@@ -31,11 +29,6 @@ def user_adds_contact(page, contact_details):
     ContactsPage(page).submitAddContactForm()
 
 
-@then(parsers.parse('User should see contact email in profile details'))
-def user_should_see_contact_email_in_profile_details(page):
-    email = EnvSetup.get_current_contact_details().get("Email", "")
-    expect(page.locator("#profile_details_section").get_by_text(email)).to_be_visible()
-
 
 @then("Search current contact fields and verify")
 def search_current_contact_fields_and_verify(page):
@@ -53,3 +46,32 @@ def search_current_contact_fields_and_verify(page):
     for field_name, search_term in search_fields.items():
         assert search_term, f"Search term for '{field_name}' is empty"
         cp.searchAndVerifyContact(search_term, field_name)
+
+
+@when("User opens edit form for current contact")
+def user_opens_edit_form_for_current_contact(page):
+    ContactsPage(page).openEditFormForCurrentContact()
+
+
+@when(parsers.parse('User updates contact with details {update_details}'))
+def user_updates_contact(page, update_details):
+    details = {}
+    for pair in update_details.split(","):
+        key, _, value = pair.partition("=")
+        details[key.strip()] = value.strip()
+    ContactsPage(page).fillContactDetails(details)
+    ContactsPage(page).submitUpdateContactForm()
+
+
+@when("User opens details page for current contact")
+def user_opens_details_page_for_current_contact(page):
+    ContactsPage(page).openDetailsPageForCurrentContact()
+
+
+@when(parsers.parse('User updates contact on details page with {update_details}'))
+def user_updates_contact_on_details_page(page, update_details):
+    details = {}
+    for pair in update_details.split(","):
+        key, _, value = pair.partition("=")
+        details[key.strip()] = value.strip()
+    ContactsPage(page).updateContactOnDetailsPage(details)

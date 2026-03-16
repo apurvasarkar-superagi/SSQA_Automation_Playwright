@@ -14,6 +14,9 @@ class EnvSetup:
     # Thread-local storage for current scenario identifier and entity details
     _current_identifier = threading.local()
     _current_contact_details = threading.local()
+    _current_lead_details = threading.local()
+    _current_company_details = threading.local()
+    _current_deal_details = threading.local()
     
     # Thread-local storage for environment variables
     _jenkins_job_identifier = threading.local()
@@ -103,6 +106,36 @@ class EnvSetup:
     @staticmethod
     def Current_Email(email: str):
         EnvSetup.get_current_contact_details()["email"] = email
+
+    @staticmethod
+    def get_current_lead_details() -> dict:
+        if not hasattr(EnvSetup._current_lead_details, 'value'):
+            EnvSetup._current_lead_details.value = {}
+        return EnvSetup._current_lead_details.value
+
+    @staticmethod
+    def clear_current_lead_details():
+        EnvSetup._current_lead_details.value = {}
+
+    @staticmethod
+    def get_current_company_details() -> dict:
+        if not hasattr(EnvSetup._current_company_details, 'value'):
+            EnvSetup._current_company_details.value = {}
+        return EnvSetup._current_company_details.value
+
+    @staticmethod
+    def clear_current_company_details():
+        EnvSetup._current_company_details.value = {}
+
+    @staticmethod
+    def get_current_deal_details() -> dict:
+        if not hasattr(EnvSetup._current_deal_details, 'value'):
+            EnvSetup._current_deal_details.value = {}
+        return EnvSetup._current_deal_details.value
+
+    @staticmethod
+    def clear_current_deal_details():
+        EnvSetup._current_deal_details.value = {}
 
     @staticmethod
     def get_env() -> str:
