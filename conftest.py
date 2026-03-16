@@ -16,7 +16,7 @@ from sales.sync_api import sync_playwright, Page
 
 step_log = logging.getLogger("bdd.steps")
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # ── Dashboard API integration ─────────────────────────────────────────────────
 # Set DASHBOARD_URL in .env to enable (e.g., http://localhost:8080)
@@ -179,6 +179,7 @@ def pytest_runtest_makereport(item, call):
     """Hook to capture test results and take screenshots on failure"""
     outcome = yield
     rep = outcome.get_result()
+    setattr(item, f"rep_{rep.when}", rep)
 
     if rep.when != "call":
         return
@@ -369,22 +370,26 @@ def page(request, browser_type):
         }
         browser_launcher = browser_map.get(browser_type, p.chromium)
 
+        worker_id = None
+        base_url = None
+
         if remote_ws_url and not run_local:
-            scenario_node = getattr(request.node, 'scenario', None)
-            if scenario_node:
-                scenario_name = scenario_node.name
-            else:
-                scenario_name = request.node.name.replace('test_', '', 1).replace('_', ' ').title()
             parsed = urlparse(remote_ws_url)
             scheme = "https" if parsed.scheme == "wss" else "http"
             base_url = f"{scheme}://{parsed.netloc}"
             resp = requests.post(f"{base_url}/api/acquire-worker", json={}, timeout=130)
             resp.raise_for_status()
-            ws_url = base_url.replace("https://", "wss://") + resp.json()["wsUrl"]
+            worker_data = resp.json()
+            ws_url = base_url.replace("https://", "wss://") + worker_data["wsUrl"]
+            worker_id = worker_data.get("workerId")
+            scenario_name = request.node.name.removeprefix("test_").replace("_", " ").title()
             connect_headers = {"X-Scenario-Name": scenario_name}
             build_id = os.environ.get("_RESOLVED_BUILD_ID") or request.config.getoption("--build_id")
             if build_id:
                 connect_headers["X-Build-Identifier"] = build_id
+            client_id = os.environ.get("CLIENT_ID")
+            if client_id:
+                connect_headers["X-Client-Id"] = client_id
             if headless:
                 connect_headers["x-playwright-headless"] = "true"
             browser = browser_launcher.connect(
@@ -399,6 +404,19 @@ def page(request, browser_type):
         page.set_default_timeout(30000)
 
         yield page
+
+        # Report test result to remote server if the test failed
+        if worker_id and base_url:
+            rep = getattr(request.node, "rep_call", None)
+            if rep and rep.failed:
+                try:
+                    requests.post(
+                        f"{base_url}/api/workers/{worker_id}/result",
+                        json={"status": "failed", "error": str(rep.longrepr)[:500]},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
 
         # Cleanup — suppress TargetClosedError which occurs during
         # parallel xdist shutdown when targets are already closing

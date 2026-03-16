@@ -10,6 +10,10 @@ class EnvSetup:
     
     # Thread-local storage for driver/page
     _page = threading.local()
+
+    # Thread-local storage for current scenario identifier and entity details
+    _current_identifier = threading.local()
+    _current_contact_details = threading.local()
     
     # Thread-local storage for environment variables
     _jenkins_job_identifier = threading.local()
@@ -78,6 +82,28 @@ class EnvSetup:
         """Get current user password"""
         return getattr(EnvSetup._current_user_password, 'value', None)
     
+    @staticmethod
+    def get_current_identifier() -> Optional[str]:
+        return getattr(EnvSetup._current_identifier, 'value', None)
+
+    @staticmethod
+    def set_current_identifier(value: str):
+        EnvSetup._current_identifier.value = value
+
+    @staticmethod
+    def get_current_contact_details() -> dict:
+        if not hasattr(EnvSetup._current_contact_details, 'value'):
+            EnvSetup._current_contact_details.value = {}
+        return EnvSetup._current_contact_details.value
+
+    @staticmethod
+    def clear_current_contact_details():
+        EnvSetup._current_contact_details.value = {}
+
+    @staticmethod
+    def Current_Email(email: str):
+        EnvSetup.get_current_contact_details()["email"] = email
+
     @staticmethod
     def get_env() -> str:
         """Get current environment (prod or staging)"""

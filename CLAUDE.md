@@ -184,3 +184,66 @@ pytest -m contacts --local
 # Run against staging
 pytest -m contacts_1 --DVR_ENV=staging --local --headed
 ```
+
+---
+
+## Manual Scenario Verification via Browser
+
+### Trigger
+When the user says **"manually validate @tag1, @tag2, ..."** (e.g., `manually validate @leads_1, @contacts_2`), execute the full verification process below for each listed scenario tag. The browser must already be open or navigable via MCP Playwright.
+
+When verifying a scenario, do NOT just walk through the Gherkin steps literally. You must **read and understand the full code chain** before executing in the browser.
+
+### Verification Process
+
+#### Phase 1 — Code Analysis (before touching the browser)
+1. **Read the feature file** — understand the scenario, its tags, and all parameters (Scenario Outline examples, inline data, etc.)
+2. **Read the step definitions** — understand the actual Python code that runs for each step, including:
+   - Data transformations (e.g., splitting `___`-delimited strings)
+   - Dynamic modifications (e.g., appending `SCENARIO_ID` to emails)
+   - Environment variable usage (e.g., `os.environ.get("SCENARIO_ID")`)
+3. **Read the page objects** — understand what locators and actions are used
+4. **Read conftest.py fixtures** — understand what fixtures are auto-injected:
+   - `scenario_id` fixture generates a random 9-char alphanumeric ID per test and sets `os.environ["SCENARIO_ID"]`
+   - `page` fixture provides the Playwright page instance
+   - `env` fixture provides the environment (prod/staging/uat)
+5. **Read config.yaml** — resolve credential keys to actual values (email, password, etc.)
+
+#### Phase 2 — Simulate Runtime Behavior
+When executing in the browser, replicate what the **code actually does at runtime**, not just the Gherkin text:
+- If the step def appends a `SCENARIO_ID` to an email, generate a random identifier and use it (e.g., `apurvasarkar+abc123def@gmail.com`)
+- If the step def splits a `___`-delimited string, use the split values correctly
+- If a fixture transforms data, apply that transformation
+- If there is an `if` statement or conditional logic, evaluate it as the code would
+
+#### Phase 3 — Browser Execution & Validation
+Execute each step in the browser and verify:
+1. **Navigation** — correct pages load, expected elements appear
+2. **Actions** — forms fill correctly, buttons are clickable and enabled
+3. **Assertions** — success messages appear, data is visible where expected
+4. **Locators** — every locator in the page object actually finds an element on the page
+
+#### Phase 4 — Report Results
+Provide a step-by-step table with PASS/FAIL for each Gherkin step, and note any issues found.
+
+### Locator Verification in Browser Snapshots
+
+The Playwright MCP browser snapshot shows an **accessibility tree**, not the raw DOM. This means:
+- **HTML `id` attributes are NOT shown** in snapshots — elements like `id="profile_details_section"` will appear as `generic [ref=eXXX]` without the id
+- **CSS class names are NOT shown** — `.card_container` won't appear by name
+- **`data-*` attributes are NOT shown**
+
+When verifying locators that use CSS selectors or DOM ids, you **cannot rely on the snapshot alone**. These locators are valid even if not visible in the snapshot:
+
+| Locator Type | Example | Visible in Snapshot? |
+|---|---|---|
+| `page.locator("#some_id")` | `page.locator("#profile_details_section")` | No — id attributes hidden |
+| `page.locator("[id='some_id']")` | `page.locator("[id='profile_details_section']")` | No — same as above |
+| `page.locator(".css-class")` | `page.locator(".card_container")` | No — classes hidden |
+| `page.locator("[data-attr='value']")` | `page.locator("[data-testid='lead-email']")` | No — data attrs hidden |
+| `page.get_by_role(...)` | `page.get_by_role("button", name="Add Lead")` | Yes — roles shown |
+| `page.get_by_text(...)` | `page.get_by_text("Lead added successfully")` | Yes — text shown |
+| `page.get_by_role("textbox", name="X")` | `page.get_by_role("textbox", name="Email")` | Yes — roles shown |
+| `page.get_by_role("img", name="X")` | `page.get_by_role("img", name="crm_icon")` | Yes — roles shown |
+
+**Rule**: Do NOT flag CSS/id-based locators as broken just because they don't appear in the accessibility snapshot. Only flag a locator as potentially broken if you have concrete evidence (e.g., a JavaScript evaluation confirms the element doesn't exist, or the action using it visibly fails).
