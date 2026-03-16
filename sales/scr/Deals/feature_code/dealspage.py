@@ -121,6 +121,29 @@ class DealsPage:
         self.page.get_by_role("button", name="Update Deal").click()
         self.page.wait_for_timeout(2000)
 
+    def deleteCurrentDeal(self):
+        title = EnvSetup.get_current_deal_details().get("Title", "")
+        self.searchAndVerifyDeal(title, "Title")
+        self.page.get_by_role("button", name="more_icon").first.click()
+        self.page.get_by_role("menuitem").filter(has_text="Delete").click()
+        self.page.get_by_role("button", name="Delete").click()
+
+    def verifyDealDeleted(self):
+        title = EnvSetup.get_current_deal_details().get("Title", "")
+        self.navigateToCRMDeals()
+        self.verifyDealsListVisible()
+        search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
+        self.page.wait_for_timeout(5000)
+        search_input.fill("")
+        self.page.wait_for_timeout(5000)
+        search_input.fill(title)
+        search_input.press("Enter")
+        self.page.wait_for_timeout(2000)
+        try:
+            self.page.get_by_text("No results found").wait_for(timeout=15000)
+        except Exception:
+            raise AssertionError(f"Deal with title '{title}' still appears in search results after deletion")
+
     def searchAndVerifyDeal(self, search_term, field_name="value", retries=5, retry_interval=3000):
         search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
         self.page.wait_for_timeout(5000)

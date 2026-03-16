@@ -66,3 +66,13 @@ def user_updates_deal_on_details_page(page, update_details):
         key, _, value = pair.partition("=")
         details[key.strip()] = value.strip()
     DealsPage(page).updateDealOnDetailsPage(details)
+
+
+@when("User deletes current deal")
+def user_deletes_current_deal(page):
+    DealsPage(page).deleteCurrentDeal()
+
+
+@then("Current deal should not appear in search results")
+def current_deal_should_not_appear_in_search_results(page):
+    DealsPage(page).verifyDealDeleted()

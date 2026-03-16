@@ -186,6 +186,29 @@ class LeadsPage:
     def submitUpdateLeadForm(self):
         self.page.get_by_role("button", name="Update Lead").click()
 
+    def deleteCurrentLead(self):
+        email = EnvSetup.get_current_lead_details().get("Email", "")
+        self.searchAndVerifyLead(email, "Email")
+        self.page.get_by_role("button", name="more_icon").first.click()
+        self.page.get_by_role("menuitem").filter(has_text="Delete").click()
+        self.page.get_by_role("button", name="Delete").click()
+
+    def verifyLeadDeleted(self):
+        email = EnvSetup.get_current_lead_details().get("Email", "")
+        self.navigateToCRMLeads()
+        self.verifyLeadsListVisible()
+        search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
+        self.page.wait_for_timeout(5000)
+        search_input.fill("")
+        self.page.wait_for_timeout(5000)
+        search_input.fill(email)
+        search_input.press("Enter")
+        self.page.wait_for_timeout(2000)
+        try:
+            self.page.get_by_text("No results found").wait_for(timeout=15000)
+        except Exception:
+            raise AssertionError(f"Lead with email '{email}' still appears in search results after deletion")
+
     def searchAndVerifyLead(self, search_term, field_name="value", retries=5, retry_interval=3000):
         search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
         self.page.wait_for_timeout(5000)

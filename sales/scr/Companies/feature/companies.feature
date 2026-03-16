@@ -14,7 +14,7 @@ Feature: Verify Companies functionality in CRM
       | company_details                                                                                                                                                                                                                                    |
       | Name=CTQATestCo,Industry=Technology,Country=United States,Website=www.contlo.com,LinkedIn URL=www.linkedin.in,Description=QA Automation test company for testing purposes,Company Size=1-10,Annual Revenue=1000000,City=San Francisco,State=California,Zipcode=94102,Tags=automation |
 
-  @company_3
+  @company_3 @apurva
   Scenario Outline: Verify user is able to edit via Details Page
     Given User navigates to the login page
     When User signs in with qaautomation_main_cred credentials
@@ -25,6 +25,9 @@ Feature: Verify Companies functionality in CRM
     When User opens details page for current company
     When User updates company on details page with <update_details>
     Then Search current company fields and verify
+    When User deletes current company
+    Then User should see "Company deleted successfully" message
+    Then Current company should not appear in search results
 
     Examples:
       | company_details | update_details |

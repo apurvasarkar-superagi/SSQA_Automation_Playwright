@@ -75,3 +75,13 @@ def user_updates_lead_on_details_page(page, update_details):
         key, _, value = pair.partition("=")
         details[key.strip()] = value.strip()
     LeadsPage(page).updateLeadOnDetailsPage(details)
+
+
+@when("User deletes current lead")
+def user_deletes_current_lead(page):
+    LeadsPage(page).deleteCurrentLead()
+
+
+@then("Current lead should not appear in search results")
+def current_lead_should_not_appear_in_search_results(page):
+    LeadsPage(page).verifyLeadDeleted()

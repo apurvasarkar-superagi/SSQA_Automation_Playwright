@@ -220,6 +220,29 @@ class ContactsPage:
             f"when searching by {field_name}: '{search_term}'"
         )
 
+    def deleteCurrentContact(self):
+        email = EnvSetup.get_current_contact_details().get("Email", "")
+        self.searchAndVerifyContact(email, "Email")
+        self.page.get_by_role("button", name="more_icon").first.click()
+        self.page.get_by_role("menuitem").filter(has_text="Delete").click()
+        self.page.get_by_role("button", name="Delete").click()
+
+    def verifyContactDeleted(self):
+        email = EnvSetup.get_current_contact_details().get("Email", "")
+        self.navigateToCRMContacts()
+        self.verifyContactsListVisible()
+        search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
+        self.page.wait_for_timeout(5000)
+        search_input.fill("")
+        self.page.wait_for_timeout(5000)
+        search_input.fill(email)
+        search_input.press("Enter")
+        self.page.wait_for_timeout(2000)
+        try:
+            self.page.get_by_text("No results found").wait_for(timeout=15000)
+        except Exception:
+            raise AssertionError(f"Contact with email '{email}' still appears in search results after deletion")
+
     def verifyContactInSearchResults(self, value, field_name="value", retries=5, retry_interval=3000):
         """Retries the search until the contact appears in the table.
         Needed because backend indexing can lag behind the creation toast.

@@ -175,6 +175,29 @@ class CompaniesPage:
     def submitUpdateCompanyForm(self):
         self.page.get_by_role("button", name="Update Company").click()
 
+    def deleteCurrentCompany(self):
+        name = EnvSetup.get_current_company_details().get("Name", "")
+        self.searchAndVerifyCompany(name, "Name")
+        self.page.get_by_role("button", name="more_icon").first.click()
+        self.page.get_by_role("menuitem").filter(has_text="Delete").click()
+        self.page.get_by_role("button", name="Delete").click()
+
+    def verifyCompanyDeleted(self):
+        name = EnvSetup.get_current_company_details().get("Name", "")
+        self.navigateToCRMCompanies()
+        self.verifyCompaniesListVisible()
+        search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
+        self.page.wait_for_timeout(5000)
+        search_input.fill("")
+        self.page.wait_for_timeout(5000)
+        search_input.fill(name)
+        search_input.press("Enter")
+        self.page.wait_for_timeout(2000)
+        try:
+            self.page.get_by_text("No results found").wait_for(timeout=15000)
+        except Exception:
+            raise AssertionError(f"Company with name '{name}' still appears in search results after deletion")
+
     def searchAndVerifyCompany(self, search_term, field_name="value", retries=5, retry_interval=3000):
         search_input = self.page.locator('.action_bar_buttons  input[placeholder*="Search"]').first
         self.page.wait_for_timeout(5000)

@@ -72,3 +72,13 @@ def user_updates_company_on_details_page(page, update_details):
         key, _, value = pair.partition("=")
         details[key.strip()] = value.strip()
     CompaniesPage(page).updateCompanyOnDetailsPage(details)
+
+
+@when("User deletes current company")
+def user_deletes_current_company(page):
+    CompaniesPage(page).deleteCurrentCompany()
+
+
+@then("Current company should not appear in search results")
+def current_company_should_not_appear_in_search_results(page):
+    CompaniesPage(page).verifyCompanyDeleted()

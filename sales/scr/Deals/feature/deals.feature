@@ -31,7 +31,7 @@ Feature: Verify Deals functionality in CRM
       | deal_details | update_details |
       | Title=CTQATestDeal,Amount=50000,Priority=High,Deal Type=New,Description=QA Automation test deal for testing purposes,Tags=automation | Title=CTQATestDealUpd,Amount=75000,Priority=Medium,Deal Type=Existing,Description=Updated QA Automation deal,Tags=automation |
 
-  @deal_3
+  @deal_3 @apurva
   Scenario Outline: Verify user is able to edit via Details Page
     Given User navigates to the login page
     When User signs in with qaautomation_main_cred credentials
@@ -42,6 +42,9 @@ Feature: Verify Deals functionality in CRM
     When User opens details page for current deal
     When User updates deal on details page with <update_details>
     Then Search current deal fields and verify
+    When User deletes current deal
+    Then User should see "Deal deleted successfully" message
+    Then Current deal should not appear in search results
 
     Examples:
       | deal_details | update_details |

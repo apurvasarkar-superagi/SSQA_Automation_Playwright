@@ -31,7 +31,7 @@ Feature: Verify Leads functionality in CRM
       | lead_details | update_details |
       | First Name=CTQATestLead,Last Name=Contlo,Email=qaautomation@contlo.com,Phone Number=+918888888888,LinkedIn URL=www.linkedin.in,Address=456 Oak Avenue,City=San Francisco,State=California,Country=United States,Zipcode=94102,Current Role=QA Automation Engineer,Description=Quality Assurance lead for automation testing,Tags=automation | First Name=CTQATestLeadUpd,Last Name=ContloUpd,Email=qaautomation+upd@contlo.com,Phone Number=+917777777777,LinkedIn URL=www.linkedin.com/updated,Address=789 Pine Street,City=Los Angeles,State=New York,Country=United Kingdom,Zipcode=10001,Current Role=Senior QA Engineer,Description=Updated QA Automation lead,Tags=automation |
 
-  @lead_3
+  @lead_3 @apurva
   Scenario Outline: Verify user is able to edit via Details Page
     Given User navigates to the login page
     When User signs in with qaautomation_main_cred credentials
@@ -42,6 +42,9 @@ Feature: Verify Leads functionality in CRM
     When User opens details page for current lead
     When User updates lead on details page with <update_details>
     Then Search current lead fields and verify
+    When User deletes current lead
+    Then User should see "Lead deleted successfully" message
+    Then Current lead should not appear in search results
 
     Examples:
       | lead_details | update_details |

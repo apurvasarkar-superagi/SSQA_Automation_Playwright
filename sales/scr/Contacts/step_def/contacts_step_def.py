@@ -75,3 +75,13 @@ def user_updates_contact_on_details_page(page, update_details):
         key, _, value = pair.partition("=")
         details[key.strip()] = value.strip()
     ContactsPage(page).updateContactOnDetailsPage(details)
+
+
+@when("User deletes current contact")
+def user_deletes_current_contact(page):
+    ContactsPage(page).deleteCurrentContact()
+
+
+@then("Current contact should not appear in search results")
+def current_contact_should_not_appear_in_search_results(page):
+    ContactsPage(page).verifyContactDeleted()
