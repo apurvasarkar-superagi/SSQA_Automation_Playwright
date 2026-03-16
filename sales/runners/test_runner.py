@@ -15,6 +15,8 @@ GLUE_MODULES = [
     "Common",
     "Contacts",
     "Leads",
+    "Companies",
+    "Deals",
 ]
 
 STEP_DEF_BASE_PATH = "sales.scr"
